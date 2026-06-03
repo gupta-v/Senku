@@ -15,14 +15,6 @@ RUN uv sync --frozen --no-dev
 
 COPY . .
 
-# Bake Whisper model into image at build time — no cold-start download
-RUN uv run python -c "\
-from huggingface_hub import snapshot_download; \
-snapshot_download(\
-    repo_id='Systran/faster-whisper-small', \
-    local_dir='SenkuNoChinou/models/stt_models/small', \
-    ignore_patterns=['*.msgpack', '*.h5', 'flax_model*', 'tf_model*', '.gitattributes', 'README.md'] \
-)"
 
 EXPOSE 8000
 
