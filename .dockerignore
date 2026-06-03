@@ -1,0 +1,10 @@
+.venv/
+.env
+.git/
+.claude/
+__pycache__/
+*.pyc
+*.pyo
+
+# model weights fetched during docker build, not from context
+SenkuNoChinou/models/stt_models/
