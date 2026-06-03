@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -25,9 +26,23 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.stt = STTService()
-    async with build_workflow() as workflow:
-        app.state.workflow = workflow
+    app.state.workflow = None  # None until background init completes
+
+    async def _init_workflow():
+        async with build_workflow() as wf:
+            app.state.workflow = wf
+            log.info("workflow ready — accepting requests")
+            await asyncio.get_event_loop().create_future()  # hold context open
+
+    task = asyncio.create_task(_init_workflow())
+    try:
         yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 app = FastAPI(title="SenkuNoChinou", lifespan=lifespan)

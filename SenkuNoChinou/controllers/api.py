@@ -2,7 +2,7 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Form, Request, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from SenkuNoChinou.core.workflow import respond, respond_stream
@@ -11,6 +11,18 @@ from SenkuNoChinou.models.apiSchema import CreateThreadResponse, RespondRequest,
 log = logging.getLogger("senku.api")
 
 router = APIRouter(prefix="/senku", tags=["senku"])
+
+
+def _require_workflow(request: Request):
+    wf = request.app.state.workflow
+    if wf is None:
+        raise HTTPException(503, "Service starting up, try again shortly")
+    return wf
+
+
+@router.get("/health")
+async def health(request: Request):
+    return {"status": "ok", "workflow_ready": request.app.state.workflow is not None}
 
 
 @router.post("/create-thread", response_model=CreateThreadResponse)
@@ -23,7 +35,7 @@ async def create_thread():
 @router.post("/respond", response_model=RespondResponse)
 async def respond_endpoint(body: RespondRequest, request: Request):
     log.info("respond thread_id=%s query=%r", body.thread_id, body.query)
-    wf = request.app.state.workflow
+    wf = _require_workflow(request)
     response = await respond(wf, body.query, body.thread_id)
     log.info("respond done thread_id=%s response_len=%d", body.thread_id, len(response))
     return RespondResponse(response=response)
@@ -46,8 +58,8 @@ async def stt_respond(
     language: str = Form("en"),
 ):
     log.info("stt_respond thread_id=%s file=%s language=%s", thread_id, audio.filename, language)
+    wf = _require_workflow(request)
     stt = request.app.state.stt
-    wf = request.app.state.workflow
     audio_bytes = await audio.read()
     transcript = await stt.transcribe(audio_bytes, filename=audio.filename or "audio", language=language)
     log.info("stt_respond transcript=%r", transcript[:100])
@@ -64,8 +76,8 @@ async def stt_respond_stream(
     language: str = Form("en"),
 ):
     log.info("stt_respond_stream thread_id=%s file=%s", thread_id, audio.filename)
+    wf = _require_workflow(request)
     stt = request.app.state.stt
-    wf = request.app.state.workflow
     audio_bytes = await audio.read()
     transcript = await stt.transcribe(audio_bytes, filename=audio.filename or "audio", language=language)
     log.info("stt_respond_stream transcript=%r", transcript[:100])
@@ -85,7 +97,7 @@ async def stt_respond_stream(
 @router.post("/respond-stream")
 async def respond_stream_endpoint(body: RespondRequest, request: Request):
     log.info("respond_stream thread_id=%s query=%r", body.thread_id, body.query)
-    wf = request.app.state.workflow
+    wf = _require_workflow(request)
 
     async def event_stream():
         token_count = 0
