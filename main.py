@@ -1,5 +1,12 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Render mounts secret file at /etc/secrets/.env — load before anything else
+_secrets = Path("/etc/secrets/.env")
+load_dotenv(_secrets if _secrets.exists() else Path(".env"))
 
 import uvicorn
 from fastapi import FastAPI
