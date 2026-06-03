@@ -1,5 +1,4 @@
 import logging
-import os
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -18,12 +17,7 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.stt = STTService(
-        model_size=os.getenv("WHISPER_MODEL", "small"),
-        device=os.getenv("WHISPER_DEVICE", "cpu"),
-        compute_type=os.getenv("WHISPER_COMPUTE_TYPE", "int8"),
-        model_dir=os.getenv("WHISPER_MODEL_DIR"),  # None → default models/stt_models/
-    )
+    app.state.stt = STTService()
     async with build_workflow() as workflow:
         app.state.workflow = workflow
         yield
