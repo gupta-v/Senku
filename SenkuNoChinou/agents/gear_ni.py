@@ -4,43 +4,23 @@ from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 
 from SenkuNoChinou.agents.gear_base import Gear
+from SenkuNoChinou.MCP.prompts.ni_prompt import get_ni_system_prompt
+from SenkuNoChinou.core.server import NI_URL
 
 load_dotenv()
 
 gear_ni = Gear(
     name="ni",
     servers={
-        "ni-prompts": {
-            "command": "uv",
-            "args": ["run", "fastmcp", "run", "SenkuNoChinou/MCP/servers/ni_server.py"],
-            "transport": "stdio",
-        },
-        "environment": {
-            "command": "uv",
-            "args": ["run", "fastmcp", "run", "SenkuNoChinou/MCP/servers/environment_server.py"],
-            "transport": "stdio",
-        },
-        "music": {
-            "command": "uv",
-            "args": ["run", "fastmcp", "run", "SenkuNoChinou/MCP/servers/music_server.py"],
-            "transport": "stdio",
-        },
-        "ntfy": {
-            "command": "uv",
-            "args": ["run", "fastmcp", "run", "SenkuNoChinou/MCP/servers/ntfy_server.py"],
-            "transport": "stdio",
+        "ni": {
+            "url": NI_URL,
+            "transport": "streamable_http",
         },
     },
-    prompt_server="ni-prompts",
-    prompt_name="ni_system",
-    tool_names={
-        "search_music",
-        "play_music_link",
-        "get_datetime",
-        "get_weather",
-    },
+    system_prompt=get_ni_system_prompt(),
+    tool_names={"search_music", "play_music_link", "get_weather", "get_datetime", "internet_search", "ask_wikipedia"},
     llm=ChatGroq(
-        model=os.getenv("NI_MODEL", "llama3-groq-70b-8192-tool-use-preview"),
+        model=os.getenv("NI_MODEL", "llama-3.3-70b-versatile"),
         api_key=os.environ["GROQ_API_KEY"],
     ),
 )

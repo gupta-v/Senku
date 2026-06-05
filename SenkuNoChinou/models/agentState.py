@@ -11,5 +11,7 @@ class NowPlaying(TypedDict):
 
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
-    gear: str                               # "ichi" | "ni" | "san"
+    gear: str                               # "ichi" | "ni" | "san" | "go"
     now_playing: NowPlaying | None          # current track, persists across turns
+    retry_count: int                        # retries attempted this turn (reset each new human message)
+    fulfilled: bool                         # set True by gear_yon when task is complete
