@@ -1,7 +1,7 @@
 import os
 from typing import Literal
 
-import requests
+import httpx
 from dotenv import load_dotenv
 from langchain.tools import tool
 
@@ -13,7 +13,7 @@ _TOPIC = os.getenv("NTFY_TOPIC", "senku-hokoku")
 _NTFY_BASE = "https://ntfy.sh"
 
 
-def send_notification(
+async def send_notification(
     message: str,
     title: str = "Senku",
     priority: Literal[1, 2, 3, 4, 5] = 3,
@@ -47,19 +47,20 @@ def send_notification(
         headers["Click"] = url
 
     try:
-        response = requests.post(
-            f"{_NTFY_BASE}/{_TOPIC}",
-            data=message.encode("utf-8"),
-            headers=headers,
-            timeout=10,
-        )
-        response.raise_for_status()
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{_NTFY_BASE}/{_TOPIC}",
+                content=message.encode("utf-8"),
+                headers=headers,
+                timeout=10,
+            )
+            response.raise_for_status()
         return f"Notification sent to {_TOPIC}."
     except Exception as e:
         return f"Failed to send notification: {e}"
 
 
-def play_music_link(video_id: str, title: str = "", artist: str = "") -> str:
+async def play_music_link(video_id: str, title: str = "", artist: str = "") -> str:
     """
     Push a tap-to-play YouTube Music notification to the owner's phone.
 
@@ -85,13 +86,14 @@ def play_music_link(video_id: str, title: str = "", artist: str = "") -> str:
         "Click": yt_url,
     }
     try:
-        response = requests.post(
-            f"{_NTFY_BASE}/{_TOPIC}",
-            data="Tap to play in YouTube Music".encode("utf-8"),
-            headers=headers,
-            timeout=10,
-        )
-        response.raise_for_status()
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{_NTFY_BASE}/{_TOPIC}",
+                content="Tap to play in YouTube Music".encode("utf-8"),
+                headers=headers,
+                timeout=10,
+            )
+            response.raise_for_status()
         return f"Sent to phone: {label}. Tap the notification to play."
     except Exception as e:
         return f"Failed to send: {e}"

@@ -17,7 +17,7 @@ from SenkuNoChinou.controllers.api import router as senku_router
 from SenkuNoChinou.controllers.gif_router import gif_router
 from SenkuNoChinou.core.workflow import build_workflow
 from SenkuNoChinou.core.scheduler import run_scheduler
-from SenkuNoChinou.core.server import run_mcp_servers
+from SenkuNoChinou.core.server import run_mcp_servers, ICHI_PORT, NI_PORT, SAN_PORT, GO_PORT
 from SenkuNoChinou.repositories.database import ping as db_ping, close as db_close
 from SenkuNoChinou.services.stt import STTService
 
@@ -29,7 +29,26 @@ logging.basicConfig(
 
 log = logging.getLogger("senku.main")
 
-_MCP_STARTUP_GRACE = float(os.getenv("MCP_STARTUP_GRACE", "2.0"))
+_MCP_READY_TIMEOUT = float(os.getenv("MCP_READY_TIMEOUT", "10.0"))
+
+
+async def _await_mcp_ports(ports: list[int], timeout: float = _MCP_READY_TIMEOUT) -> None:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    for port in ports:
+        while loop.time() < deadline:
+            try:
+                _, writer = await asyncio.wait_for(
+                    asyncio.open_connection("127.0.0.1", port), timeout=0.3
+                )
+                writer.close()
+                await writer.wait_closed()
+                log.debug("MCP port %d ready", port)
+                break
+            except Exception:
+                await asyncio.sleep(0.2)
+        else:
+            log.warning("MCP port %d not ready within %.1fs", port, timeout)
 
 
 @asynccontextmanager
@@ -46,14 +65,14 @@ async def lifespan(app: FastAPI):
     if mcp_host == "localhost":
         log.info("starting MCP servers in-process (MCP_HOST=localhost)")
         mcp_task = asyncio.create_task(run_mcp_servers())
-        await asyncio.sleep(_MCP_STARTUP_GRACE)
+        await _await_mcp_ports([ICHI_PORT, NI_PORT, SAN_PORT, GO_PORT])
 
     # ── Workflow init (background) ───────────────────────────────────────────
     async def _init_workflow():
         async with build_workflow() as wf:
             app.state.workflow = wf
             log.info("workflow ready — accepting requests")
-            await asyncio.get_event_loop().create_future()  # hold context open
+            await asyncio.get_running_loop().create_future()
 
     workflow_task = asyncio.create_task(_init_workflow())
 

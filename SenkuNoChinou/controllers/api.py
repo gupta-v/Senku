@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import uuid
@@ -12,12 +13,44 @@ log = logging.getLogger("senku.api")
 
 router = APIRouter(prefix="/senku", tags=["senku"])
 
+_RESPOND_TIMEOUT = 120.0
+_SSE_KEEPALIVE_INTERVAL = 15.0
+
+_thread_locks: dict[str, asyncio.Lock] = {}
+
 
 def _require_workflow(request: Request):
     wf = request.app.state.workflow
     if wf is None:
         raise HTTPException(503, "Service starting up, try again shortly")
     return wf
+
+
+async def _respond_locked(wf, query: str, thread_id: str) -> str:
+    lock = _thread_locks.setdefault(thread_id, asyncio.Lock())
+    async with lock:
+        try:
+            return await asyncio.wait_for(respond(wf, query, thread_id), timeout=_RESPOND_TIMEOUT)
+        except asyncio.TimeoutError:
+            raise HTTPException(504, "Request timed out")
+
+
+async def _sse_with_keepalive(gen):
+    """Wrap an async token generator, emitting SSE keepalive comments between tokens."""
+    it = gen.__aiter__()
+    try:
+        while True:
+            try:
+                token = await asyncio.wait_for(it.__anext__(), timeout=_SSE_KEEPALIVE_INTERVAL)
+                yield f"data: {json.dumps({'token': token})}\n\n"
+            except asyncio.TimeoutError:
+                yield ": keepalive\n\n"
+            except StopAsyncIteration:
+                break
+    finally:
+        if hasattr(it, "aclose"):
+            await it.aclose()
+    yield "data: [DONE]\n\n"
 
 
 @router.get("/health")
@@ -36,7 +69,7 @@ async def create_thread():
 async def respond_endpoint(body: RespondRequest, request: Request):
     log.info("respond thread_id=%s query=%r", body.thread_id, body.query)
     wf = _require_workflow(request)
-    response = await respond(wf, body.query, body.thread_id)
+    response = await _respond_locked(wf, body.query, body.thread_id)
     log.info("respond done thread_id=%s response_len=%d", body.thread_id, len(response))
     return RespondResponse(response=response)
 
@@ -63,7 +96,7 @@ async def stt_respond(
     audio_bytes = await audio.read()
     transcript = await stt.transcribe(audio_bytes, filename=audio.filename or "audio", language=language)
     log.info("stt_respond transcript=%r", transcript[:100])
-    response = await respond(wf, transcript, thread_id)
+    response = await _respond_locked(wf, transcript, thread_id)
     log.info("stt_respond done thread_id=%s", thread_id)
     return SttRespondResponse(transcript=transcript, response=response)
 
@@ -84,12 +117,11 @@ async def stt_respond_stream(
 
     async def event_stream():
         yield f"data: {json.dumps({'transcript': transcript})}\n\n"
-        token_count = 0
-        async for token in respond_stream(wf, transcript, thread_id):
-            token_count += 1
-            yield f"data: {json.dumps({'token': token})}\n\n"
-        log.info("stt_respond_stream done thread_id=%s tokens=%d", thread_id, token_count)
-        yield "data: [DONE]\n\n"
+        lock = _thread_locks.setdefault(thread_id, asyncio.Lock())
+        async with lock:
+            async for chunk in _sse_with_keepalive(respond_stream(wf, transcript, thread_id)):
+                yield chunk
+        log.info("stt_respond_stream done thread_id=%s", thread_id)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -100,11 +132,10 @@ async def respond_stream_endpoint(body: RespondRequest, request: Request):
     wf = _require_workflow(request)
 
     async def event_stream():
-        token_count = 0
-        async for token in respond_stream(wf, body.query, body.thread_id):
-            token_count += 1
-            yield f"data: {json.dumps({'token': token})}\n\n"
-        log.info("respond_stream done thread_id=%s tokens=%d", body.thread_id, token_count)
-        yield "data: [DONE]\n\n"
+        lock = _thread_locks.setdefault(body.thread_id, asyncio.Lock())
+        async with lock:
+            async for chunk in _sse_with_keepalive(respond_stream(wf, body.query, body.thread_id)):
+                yield chunk
+        log.info("respond_stream done thread_id=%s", body.thread_id)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

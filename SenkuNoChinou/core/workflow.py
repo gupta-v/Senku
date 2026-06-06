@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -63,7 +64,8 @@ async def build_workflow():
     mcp_tools = await client.get_tools()
     log.info("tools ready mcp=%d", len(mcp_tools))
 
-    agents = {g.name: await g.build_agent(mcp_tools, client) for g in _GEARS}
+    built = await asyncio.gather(*[g.build_agent(mcp_tools, client) for g in _GEARS])
+    agents = {g.name: agent for g, agent in zip(_GEARS, built)}
     log.info("agents built: %s", list(agents.keys()))
 
     router = GearZero()
@@ -97,16 +99,7 @@ async def build_workflow():
 
     async def gear_ni_node(state: AgentState) -> dict:
         log.info("gear_ni invoked")
-        messages = await _invoke_gear("ni", state)
-        update: dict = {"messages": messages}
-        for msg in messages:
-            content = getattr(msg, "content", "")
-            if isinstance(content, str) and "Playback started for video" in content:
-                vid = content.split("video ")[-1].split(".")[0].strip()
-                update["now_playing"] = {"video_id": vid, "title": "", "artist": ""}
-                log.info("gear_ni now_playing video_id=%s", vid)
-                break
-        return update
+        return {"messages": await _invoke_gear("ni", state)}
 
     async def gear_san_node(state: AgentState) -> dict:
         log.info("gear_san invoked")
