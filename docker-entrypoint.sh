@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+
+if [ "$APP_MODE" = "mcp" ]; then
+    exec uv run python SenkuNoChinou/core/server.py
+else
+    exec uv run uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+fi

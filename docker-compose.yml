@@ -1,4 +1,17 @@
 services:
+  mcp:
+    build: .
+    environment:
+      APP_MODE: mcp
+    ports:
+      - "8081:8081"
+      - "8082:8082"
+      - "8083:8083"
+      - "8084:8084"
+    env_file:
+      - .env
+    restart: unless-stopped
+
   senku:
     build: .
     ports:
@@ -7,4 +20,7 @@ services:
       - .env
     environment:
       PORT: 8000
+      MCP_HOST: mcp
+    depends_on:
+      - mcp
     restart: unless-stopped

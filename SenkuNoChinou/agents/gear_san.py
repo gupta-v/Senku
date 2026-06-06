@@ -4,28 +4,23 @@ from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 
 from SenkuNoChinou.agents.gear_base import Gear
+from SenkuNoChinou.MCP.prompts.san_prompt import get_san_system_prompt
+from SenkuNoChinou.core.server import SAN_URL
 
 load_dotenv()
 
 gear_san = Gear(
     name="san",
     servers={
-        "san-prompts": {
-            "command": "uv",
-            "args": ["run", "fastmcp", "run", "SenkuNoChinou/MCP/servers/san_server.py"],
-            "transport": "stdio",
-        },
-        "notify": {
-            "command": "uv",
-            "args": ["run", "fastmcp", "run", "SenkuNoChinou/MCP/servers/ntfy_server.py"],
-            "transport": "stdio",
+        "san": {
+            "url": SAN_URL,
+            "transport": "streamable_http",
         },
     },
-    prompt_server="san-prompts",
-    prompt_name="san_system",
+    system_prompt=get_san_system_prompt(),
     tool_names={"send_notification"},
     llm=ChatGroq(
-        model=os.getenv("SAN_MODEL", os.getenv("ICHI_MODEL", "llama-3.3-70b-versatile")),
+        model=os.getenv("SAN_MODEL", "llama-3.1-8b-instant"),
         api_key=os.environ["GROQ_API_KEY"],
     ),
 )

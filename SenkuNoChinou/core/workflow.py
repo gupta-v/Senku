@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -9,11 +10,15 @@ from SenkuNoChinou.models.agentState import AgentState
 from SenkuNoChinou.agents.gear_ichi import gear_ichi
 from SenkuNoChinou.agents.gear_ni import gear_ni
 from SenkuNoChinou.agents.gear_san import gear_san
-from SenkuNoChinou.agents.gear_router import GearRouter
+from SenkuNoChinou.agents.gear_go import gear_go
+from SenkuNoChinou.agents.gear_yon import GearYon
+from SenkuNoChinou.agents.gear_zero import GearZero
 
 log = logging.getLogger("senku.workflow")
 
-_GEARS = [gear_ichi, gear_ni, gear_san]
+_GEARS = [gear_ichi, gear_ni, gear_san, gear_go]
+
+_MAX_RETRIES = 2
 
 
 async def respond(app, query: str, thread_id: str, callbacks: list | None = None) -> str:
@@ -23,7 +28,10 @@ async def respond(app, query: str, thread_id: str, callbacks: list | None = None
     }
     if callbacks:
         config["callbacks"] = callbacks
-    result = await app.ainvoke({"messages": [("human", query)]}, config=config)
+    result = await app.ainvoke(
+        {"messages": [("human", query)], "retry_count": 0, "fulfilled": False},
+        config=config,
+    )
     return result["messages"][-1].content
 
 
@@ -33,91 +41,134 @@ async def respond_stream(app, query: str, thread_id: str):
         "metadata": {"ls_thread_id": thread_id, "thread_id": thread_id},
     }
     async for event in app.astream_events(
-        {"messages": [("human", query)]}, config=config, version="v2"
+        {"messages": [("human", query)], "retry_count": 0, "fulfilled": False},
+        config=config,
+        version="v2",
     ):
         if event["event"] == "on_chat_model_stream":
-            chunk = event["data"]["chunk"]
-            if hasattr(chunk, "content") and chunk.content:
-                yield chunk.content
+            tags = event.get("tags", [])
+            if "yon_verifier" in tags:
+                chunk = event["data"]["chunk"]
+                if hasattr(chunk, "content") and chunk.content:
+                    yield chunk.content
 
 
 @asynccontextmanager
 async def build_workflow():
-    """
-    Boot all MCP servers, compile routed multi-gear LangGraph app, yield it.
-
-    Usage:
-        async with build_workflow() as app:
-            result = await app.ainvoke(
-                {"messages": [("human", "play something")]},
-                config={"configurable": {"thread_id": "user-123"}},
-            )
-    """
     all_servers = {}
     for gear in _GEARS:
         all_servers.update(gear.servers)
 
     log.info("build_workflow starting — gears=%s", [g.name for g in _GEARS])
     client = MultiServerMCPClient(all_servers)
-    tools  = await client.get_tools()
-    log.info("MCP tools loaded count=%d names=%s", len(tools), [t.name for t in tools])
-    agents = {g.name: await g.build_agent(tools, client) for g in _GEARS}
+    mcp_tools = await client.get_tools()
+    log.info("tools ready mcp=%d", len(mcp_tools))
+
+    agents = {g.name: await g.build_agent(mcp_tools, client) for g in _GEARS}
     log.info("agents built: %s", list(agents.keys()))
-    router = GearRouter()
+
+    router = GearZero()
+    yon = GearYon()
 
     # ── Nodes ──────────────────────────────────────────────────────────────────
 
-    async def gear_router_node(state: AgentState) -> dict:
+    async def gear_zero_node(state: AgentState) -> dict:
         gear = await router.classify(state["messages"])
-        log.info("gear_router → %s", gear)
+        log.info("gear_zero → %s", gear)
         return {"gear": gear}
+
+    async def _invoke_gear(name: str, state: AgentState) -> list:
+        try:
+            result = await agents[name].ainvoke({"messages": state["messages"]})
+            log.info("gear_%s done msg_count=%d", name, len(result["messages"]))
+            return result["messages"]
+        except Exception as exc:
+            log.error("gear_%s failed: %s", name, exc)
+            body = getattr(exc, "body", None)
+            if isinstance(body, dict):
+                failed_gen = body.get("error", {}).get("failed_generation")
+                if failed_gen:
+                    log.info("gear_%s recovering failed_generation len=%d", name, len(failed_gen))
+                    return [AIMessage(content=failed_gen)]
+            return [AIMessage(content="I wasn't able to complete that request. Please try again.")]
 
     async def gear_ichi_node(state: AgentState) -> dict:
         log.info("gear_ichi invoked")
-        result = await agents["ichi"].ainvoke({"messages": state["messages"]})
-        log.info("gear_ichi done msg_count=%d", len(result["messages"]))
-        return {"messages": result["messages"]}
+        return {"messages": await _invoke_gear("ichi", state)}
 
     async def gear_ni_node(state: AgentState) -> dict:
         log.info("gear_ni invoked")
-        result = await agents["ni"].ainvoke({"messages": state["messages"]})
-        update: dict = {"messages": result["messages"]}
-        for msg in result["messages"]:
+        messages = await _invoke_gear("ni", state)
+        update: dict = {"messages": messages}
+        for msg in messages:
             content = getattr(msg, "content", "")
             if isinstance(content, str) and "Playback started for video" in content:
                 vid = content.split("video ")[-1].split(".")[0].strip()
                 update["now_playing"] = {"video_id": vid, "title": "", "artist": ""}
                 log.info("gear_ni now_playing video_id=%s", vid)
                 break
-        log.info("gear_ni done msg_count=%d", len(result["messages"]))
         return update
 
     async def gear_san_node(state: AgentState) -> dict:
         log.info("gear_san invoked")
-        result = await agents["san"].ainvoke({"messages": state["messages"]})
-        log.info("gear_san done msg_count=%d", len(result["messages"]))
-        return {"messages": result["messages"]}
+        return {"messages": await _invoke_gear("san", state)}
+
+    async def gear_go_node(state: AgentState) -> dict:
+        log.info("gear_go invoked")
+        return {"messages": await _invoke_gear("go", state)}
+
+    async def gear_yon_node(state: AgentState) -> dict:
+        log.info("gear_yon verifying retry_count=%d", state.get("retry_count", 0))
+        verdict = await yon.verify(state["messages"])
+        log.info("gear_yon verdict fulfilled=%s target=%s", verdict.fulfilled, verdict.target_gear)
+
+        new_retry = state.get("retry_count", 0) + (0 if verdict.fulfilled else 1)
+        last_msg = state["messages"][-1] if state["messages"] else None
+        response_msg = AIMessage(
+            content=verdict.response,
+            id=last_msg.id if last_msg else None,
+        )
+        return {
+            "messages": [response_msg],
+            "fulfilled": verdict.fulfilled,
+            "retry_count": new_retry,
+            "gear": verdict.target_gear if not verdict.fulfilled else state.get("gear", "ichi"),
+        }
 
     # ── Graph ──────────────────────────────────────────────────────────────────
 
     graph = StateGraph(AgentState)
 
-    graph.add_node("gear_router", gear_router_node)
-    graph.add_node("gear_ichi",   gear_ichi_node)
-    graph.add_node("gear_ni",     gear_ni_node)
-    graph.add_node("gear_san",    gear_san_node)
+    graph.add_node("gear_zero", gear_zero_node)
+    graph.add_node("gear_ichi", gear_ichi_node)
+    graph.add_node("gear_ni",   gear_ni_node)
+    graph.add_node("gear_san",  gear_san_node)
+    graph.add_node("gear_go",   gear_go_node)
+    graph.add_node("gear_yon",  gear_yon_node)
 
-    graph.add_edge(START, "gear_router")
+    graph.add_edge(START, "gear_zero")
 
     graph.add_conditional_edges(
-        "gear_router",
+        "gear_zero",
         lambda state: state["gear"],
-        {"ichi": "gear_ichi", "ni": "gear_ni", "san": "gear_san"},
+        {"ichi": "gear_ichi", "ni": "gear_ni", "san": "gear_san", "go": "gear_go"},
     )
 
-    graph.add_edge("gear_ichi", END)
-    graph.add_edge("gear_ni",   END)
-    graph.add_edge("gear_san",  END)
+    graph.add_edge("gear_ichi", "gear_yon")
+    graph.add_edge("gear_ni",   "gear_yon")
+    graph.add_edge("gear_san",  "gear_yon")
+    graph.add_edge("gear_go",   "gear_yon")
+
+    def _yon_route(state: AgentState) -> str:
+        if state.get("fulfilled", True) or state.get("retry_count", 0) >= _MAX_RETRIES:
+            return END
+        return state["gear"]
+
+    graph.add_conditional_edges(
+        "gear_yon",
+        _yon_route,
+        {"ichi": "gear_ichi", "ni": "gear_ni", "san": "gear_san", "go": "gear_go", END: END},
+    )
 
     app = graph.compile(checkpointer=MemorySaver())
 
