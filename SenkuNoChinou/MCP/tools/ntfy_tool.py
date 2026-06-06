@@ -1,3 +1,4 @@
+import asyncio
 import os
 from typing import Literal
 
@@ -11,11 +12,23 @@ load_dotenv()
 
 _TOPIC = os.getenv("NTFY_TOPIC", "senku-hokoku")
 _NTFY_BASE = "https://ntfy.sh"
+_RETRY_DELAYS = (2.0, 5.0, 10.0)  # backoff on 429
+
+
+async def _post_ntfy(url: str, content: bytes, headers: dict) -> httpx.Response:
+    async with httpx.AsyncClient() as client:
+        for i, delay in enumerate((*_RETRY_DELAYS, None)):
+            response = await client.post(url, content=content, headers=headers, timeout=10)
+            if response.status_code != 429 or delay is None:
+                response.raise_for_status()
+                return response
+            await asyncio.sleep(delay)
+    raise RuntimeError("unreachable")
 
 
 async def send_notification(
     message: str,
-    title: str = "Senku",
+    title: str = "Senku Reporting",
     priority: Literal[1, 2, 3, 4, 5] = 3,
     tags: list[str] = [],
     url: str = "",
@@ -47,14 +60,7 @@ async def send_notification(
         headers["Click"] = url
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{_NTFY_BASE}/{_TOPIC}",
-                content=message.encode("utf-8"),
-                headers=headers,
-                timeout=10,
-            )
-            response.raise_for_status()
+        await _post_ntfy(f"{_NTFY_BASE}/{_TOPIC}", message.encode("utf-8"), headers)
         return f"Notification sent to {_TOPIC}."
     except Exception as e:
         return f"Failed to send notification: {e}"
@@ -69,13 +75,23 @@ async def play_music_link(video_id: str, title: str = "", artist: str = "") -> s
     Use this as the final step after search_music finds a match.
 
     Args:
-        video_id: YouTube video ID from search_music results.
+        video_id: YouTube video ID from search_music results (e.g. dQw4w9WgXcQ). NOT a full URL.
         title: Track title shown in the notification.
         artist: Artist name shown in the notification.
 
     Returns:
         Confirmation string or error.
     """
+    # strip label prefix if model copied "VideoID: xxx" instead of bare "xxx"
+    if ":" in video_id and not video_id.startswith("http"):
+        video_id = video_id.split(":")[-1]
+    # strip full URL if model passed it instead of bare ID
+    if "watch?v=" in video_id:
+        video_id = video_id.split("watch?v=")[-1].split("&")[0]
+    video_id = video_id.strip()
+    if not video_id:
+        return "Error: video_id is empty. Call search_music first and pass the VideoID field."
+
     label = f"{title} - {artist}".strip(" -") if (title or artist) else video_id
     label = label.encode("ascii", errors="ignore").decode()
     yt_url = f"https://music.youtube.com/watch?v={video_id}"
@@ -86,14 +102,7 @@ async def play_music_link(video_id: str, title: str = "", artist: str = "") -> s
         "Click": yt_url,
     }
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{_NTFY_BASE}/{_TOPIC}",
-                content="Tap to play in YouTube Music".encode("utf-8"),
-                headers=headers,
-                timeout=10,
-            )
-            response.raise_for_status()
+        await _post_ntfy(f"{_NTFY_BASE}/{_TOPIC}", b"Tap to play in YouTube Music", headers)
         return f"Sent to phone: {label}. Tap the notification to play."
     except Exception as e:
         return f"Failed to send: {e}"

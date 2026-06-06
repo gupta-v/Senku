@@ -20,7 +20,7 @@ gear_san = Gear(
     system_prompt=get_san_system_prompt(),
     tool_names={"search_music", "play_music_link", "get_weather", "get_datetime", "internet_search", "ask_wikipedia"},
     llm=ChatGroq(
-        model=os.getenv("SAN_MODEL", "llama-3.1-8b-instant"),
+        model=os.getenv("SAN_MODEL", "llama-3.3-70b-versatile"),
         api_key=os.environ["GROQ_API_KEY"],
     ),
 )

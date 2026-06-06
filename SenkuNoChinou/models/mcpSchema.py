@@ -4,6 +4,13 @@ from pydantic import BaseModel, BeforeValidator, Field
 # coerce "5" → 5 for LLMs that stringify numbers
 CoerceInt = Annotated[int, BeforeValidator(lambda v: int(v))]
 
+# coerce unknown topic values → "general" so LLM hallucinations don't 400
+_VALID_TOPICS = {"general", "news", "finance"}
+CoerceTopic = Annotated[
+    Literal["general", "news", "finance"],
+    BeforeValidator(lambda v: v if v in _VALID_TOPICS else "general"),
+]
+
 
 # ------ WikiPedia Schemas ------
 
@@ -27,7 +34,7 @@ class WikipediaOutput(BaseModel):
 class TavilySearchInput(BaseModel):
     query: str = Field(..., description="Search query.")
     max_results: int = Field(5, description="Maximum number of results to return.")
-    topic: Literal["general", "news", "finance"] = Field("general", description="Search topic category.")
+    topic: CoerceTopic = Field("general", description="Search topic category.")
     include_raw_content: bool = Field(False, description="Include raw page content in results.")
 
 
