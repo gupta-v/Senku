@@ -37,9 +37,6 @@ NI_URL   = f"http://{MCP_HOST}:{NI_PORT}/mcp"
 SAN_URL  = f"http://{MCP_HOST}:{SAN_PORT}/mcp"
 GO_URL   = f"http://{MCP_HOST}:{GO_PORT}/mcp"
 
-# Seconds to wait after servers start before workflow connects to them
-_STARTUP_GRACE = float(os.getenv("MCP_STARTUP_GRACE", "2.0"))
-
 
 async def run_mcp_servers() -> None:
     """

@@ -28,9 +28,9 @@ NOT FULFILLED if:
 
 If not fulfilled, set target_gear:
 - ichi: research tasks (search, wiki, browse)
-- go: todos, calendar events, journal entries, productivity
-- ni: music, weather, datetime
-- san: push notifications"""
+- ni: todos, calendar events, journal entries, productivity
+- san: music, weather, datetime
+- go: push notifications"""
 
 
 _YON_RESPONSE_PROMPT = """You are Senku's response formatter. Write the final display response based on the conversation.
