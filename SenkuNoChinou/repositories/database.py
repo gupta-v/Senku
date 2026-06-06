@@ -12,22 +12,17 @@ log = logging.getLogger("senku.db")
 _client: AsyncMongoClient | None = None
 
 
-def _get_client() -> AsyncMongoClient:
-    global _client
-    if _client is None:
-        uri = os.environ["MONGODB_URI"]
-        _client = AsyncMongoClient(uri, tlsCAFile=certifi.where())
-        log.info("MongoDB client initialised")
-    return _client
-
-
 async def ping() -> bool:
     """Verify connection and initialise Beanie. Called at startup."""
+    global _client
     try:
-        client = _get_client()
-        await client.admin.command("ping")
+        if _client is None:
+            uri = os.environ["MONGODB_URI"]
+            _client = AsyncMongoClient(uri, tlsCAFile=certifi.where())
+            log.info("MongoDB client initialised")
+        await _client.admin.command("ping")
         await init_beanie(
-            database=client["senku"],
+            database=_client["senku"],
             document_models=[Todo, Event, JournalEntry],
         )
         log.info("MongoDB ping OK + Beanie initialised")
