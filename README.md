@@ -1,28 +1,144 @@
-# SenkuNoChinou (千空の知能)
+# Senku
 
-Senku's Intelligence — agentic AI personal assistant backend. JARVIS/EDITH style. Built with LangGraph, FastMCP, and Groq. Exposes a FastAPI backend with text and voice input.
+Personal AI assistant backend — JARVIS/EDITH style. Stateful multi-turn conversations, tool orchestration, voice input, and a physical desk bot that reacts in real time.
 
-## What it does
+Built in two phases:
 
-- Answers research questions via web search (Tavily), Wikipedia, and URL browsing (Jina)
-- Searches YouTube Music and pushes tap-to-play notifications to your phone
-- Fetches weather and current datetime
-- Sends push notifications via ntfy.sh
-- Maintains multi-turn conversation memory per session
-- Transcribes voice input via Whisper (faster-whisper, runs locally on CPU)
-- Traces all runs in LangSmith
+| Phase | Project | What it is |
+|-------|---------|------------|
+| **I — Chinou** (知能) | `SenkuNoChinou/` | Python backend: FastAPI + LangGraph + MCP. The brain. |
+| **II — Bunshin** (分身) | `SenkNoBunshin/` | ESP32 firmware: TFT display, GIF emotion states, touch, WiFi SSE. The body. |
+
+---
+
+## Features
+
+- **Research** — web search (Tavily), Wikipedia, browse any URL (Jina)
+- **Productivity** — todos, calendar events with 15-min push reminders, journal entries
+- **Lifestyle** — YouTube Music search + tap-to-play via phone notification, weather, datetime
+- **Notifications** — push alerts to phone via ntfy.sh
+- **Voice** — Groq Whisper API (`whisper-large-v3-turbo`), no local model
+- **Memory** — multi-turn conversation memory per thread (MemorySaver checkpointer)
+- **Observability** — full LangSmith tracing, every run linked to a thread
+- **Edge device** — Senku desk bot displays emotion GIFs and now-playing over WiFi SSE
+
+---
 
 ## Architecture
 
-Three specialised agents (gears) routed by intent:
+### Phase I — SenkuNoChinou
 
-| Gear | Domain | Tools |
-|------|--------|-------|
-| Gear Ichi (一) | Knowledge | Wikipedia, web search, URL browsing |
-| Gear Ni (二) | Lifestyle | YouTube Music search, tap-to-play, weather, datetime |
-| Gear San (三) | Action | Push notifications |
+```
+FastAPI (port 8000)
+├── POST /senku/respond           ← text in, text out
+├── POST /senku/respond-stream    ← text in, SSE token stream
+├── POST /senku/stt-respond       ← audio in (Groq Whisper), text out
+├── POST /senku/stt-respond-stream
+├── POST /senku/create-thread
+└── POST /senku/transcribe
 
-Each gear boots its own MCP servers, loads its system prompt via MCP, and runs as a LangGraph ReAct agent with filtered tools.
+LangGraph workflow (stateful, MemorySaver)
+├── GearZero   — intent router
+├── gear_ichi  — knowledge agent   ←→ ichi_server :8081
+├── gear_ni    — productivity agent ←→ ni_server   :8082
+├── gear_san   — lifestyle agent   ←→ san_server   :8083
+├── gear_go    — action agent      ←→ go_server    :8084
+└── GearYon    — verifier + synthesizer (no tools)
+
+FastMCP (4 in-process HTTP servers, ports 8081–8084)
+MongoDB Atlas (Beanie ODM — todos, events, journal)
+Background scheduler (asyncio — calendar reminders every 60s)
+```
+
+### Phase II — SenkNoBunshin (ESP32)
+
+- Connects to FastAPI via WiFi SSE
+- TFT display (160×128) renders GIF emotion states: idle, happy, curious, alert
+- Displays now-playing track from Senku
+- Touch events (planned)
+
+---
+
+## Workflow
+
+Every request flows through a fixed graph:
+
+```
+User message
+     │
+     ▼
+┌──────────┐
+│ GearZero │  Reads last 3 messages → structured output → gear name
+└─────┬────┘
+      │  ichi | ni | san | go
+      ▼
+┌───────────────────────────────────────────────┐
+│  gear_ichi   gear_ni   gear_san   gear_go     │
+│  Knowledge   Produc.   Lifestyle  Action      │
+│  (ReAct agent with filtered MCP tools)        │
+└──────────────────────┬────────────────────────┘
+                       │
+                       ▼
+              ┌─────────────┐
+              │  GearYon    │  Verifies task completion (structured output)
+              │  Verifier   │  Synthesizes display-ready response
+              └──────┬──────┘
+                     │
+          fulfilled? └─ yes ──► END  (stream response to client)
+                     └─ no  ──► retry → target gear  (max 2 retries)
+```
+
+### Nodes
+
+| Node | Role | Model |
+|------|------|-------|
+| `GearZero` | Classifies intent → `ichi \| ni \| san \| go`. Structured output (`RouteDecision`). Looks at last 3 messages for follow-up context. | `ICHI_MODEL` |
+| `gear_ichi` | ReAct agent. Wikipedia, Tavily search, Jina URL browse. | `ICHI_MODEL` |
+| `gear_ni` | ReAct agent. Todos, calendar events, journal, datetime. | `NI_MODEL` |
+| `gear_san` | ReAct agent. YouTube Music, weather, datetime, search. | `SAN_MODEL` |
+| `gear_go` | ReAct agent. ntfy.sh push notifications. | `GO_MODEL` |
+| `GearYon` | No tools. Structured output (`YonVerdict`): `fulfilled` bool + `target_gear`. Concurrently runs verdict + response synthesis. | `YON_MODEL` |
+
+GearYon runs two LLM calls **in parallel** via `asyncio.gather`: one for the structured verdict, one for the final text response.
+
+### MCP Servers
+
+Four FastMCP HTTP servers run **in-process** inside the FastAPI app (no subprocesses). Gears connect via `streamable_http`:
+
+| Server | Port | Tools |
+|--------|------|-------|
+| `ichi_server` | 8081 | `ask_wikipedia`, `internet_search`, `browse_url` |
+| `ni_server` | 8082 | `get_datetime`, `add_todo`, `list_todos`, `complete_todo`, `edit_todo`, `add_event`, `list_events`, `delete_event`, `mark_event_status`, `add_journal`, `read_journal`, `edit_journal` |
+| `san_server` | 8083 | `search_music`, `play_music_link`, `get_datetime`, `get_weather`, `internet_search`, `ask_wikipedia` |
+| `go_server` | 8084 | `send_notification` |
+
+---
+
+## Deployment
+
+Two services, deployed separately:
+
+| Service | Role | Port |
+|---------|------|------|
+| `senku-mcp` | Runs all four MCP servers (`APP_MODE=mcp`) | 8081–8084 |
+| `senku-api` | FastAPI app, connects to `senku-mcp` via `MCP_HOST` | 8000 |
+
+`docker-compose.yml` orchestrates both. `senku-api` waits for `senku-mcp` healthcheck (port 8081) before starting.
+
+---
+
+## Requirements
+
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) package manager
+- MongoDB Atlas cluster (free tier works)
+- Groq API key — LLM inference + Whisper STT
+- Tavily API key — web search
+- Jina API key(s) — URL reader
+- ntfy.sh topic — push notifications
+- LangSmith API key — tracing (optional but recommended)
+
+---
 
 ## Setup
 
@@ -30,90 +146,59 @@ Each gear boots its own MCP servers, loads its system prompt via MCP, and runs a
 # Install deps
 uv sync
 
-# Copy and fill env vars
+# Configure env vars
 cp .env.example .env
+# Edit .env — fill in API keys and MongoDB URI
 ```
 
-Required env vars:
-```
-GROQ_API_KEY=
-ICHI_MODEL=llama-3.3-70b-versatile
-NI_MODEL=llama3-groq-70b-8192-tool-use-preview
-SAN_MODEL=llama-3.3-70b-versatile
-TAVILY_API_KEY=
-JINA_API_KEY=
-NTFY_TOPIC=senku-hokoku
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_API_KEY=
-LANGCHAIN_PROJECT=senku
-```
+> **MongoDB Atlas**: ensure your Atlas cluster's Network Access allows connections from your deployment IP (or `0.0.0.0/0` for cloud deployments with dynamic IPs).
 
-Optional Whisper env vars (defaults shown):
-```
-WHISPER_MODEL=small
-WHISPER_DEVICE=cpu
-WHISPER_COMPUTE_TYPE=int8
-WHISPER_MODEL_DIR=          # defaults to SenkuNoChinou/models/stt_models/
-```
-
-## Whisper model
-
-Place model files in `SenkuNoChinou/models/stt_models/<model_size>/`:
-```
-SenkuNoChinou/models/stt_models/small/
-├── model.bin
-├── config.json
-├── tokenizer.json
-└── vocabulary.json
-```
-
-Download from: https://huggingface.co/Systran/faster-whisper-small
+---
 
 ## Run
 
 ```bash
-# FastAPI server (primary):
+# 1. MCP servers (ichi/ni/san/go on ports 8081–8084):
+uv run python SenkuNoChinou/core/server.py
+
+# 2. FastAPI server (separate terminal, after MCP is up):
 uv run python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-dir SenkuNoChinou
 
-# CLI app:
+# CLI app (boots both internally):
 uv run python .\SenkuNoChinou\services\cli_app.py
+
+# Docker (both services):
+docker-compose up --build
+
+# Test individual MCP server:
+uv run fastmcp dev inspector SenkuNoChinou/MCP/servers/<name>_server.py
 ```
 
-## API endpoints
+Interactive API docs: `http://localhost:8000/docs`
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/senku/create-thread` | Create new conversation thread → `{ thread_id }` |
-| POST | `/senku/respond` | Text input → text response |
-| POST | `/senku/respond-stream` | Text input → SSE token stream |
-| POST | `/senku/transcribe` | Audio file → transcript |
-| POST | `/senku/stt-respond` | Audio file → transcript + text response |
-| POST | `/senku/stt-respond-stream` | Audio file → transcript + SSE token stream |
+---
 
-Interactive docs at `http://localhost:8000/docs`.
+## API
 
-### STT endpoints (multipart/form-data)
+| Method | Path | Input | Output |
+|--------|------|-------|--------|
+| POST | `/senku/create-thread` | — | `{ thread_id }` |
+| POST | `/senku/respond` | `{ query, thread_id }` | `{ response }` |
+| POST | `/senku/respond-stream` | `{ query, thread_id }` | SSE token stream |
+| POST | `/senku/transcribe` | multipart `audio` | `{ text }` |
+| POST | `/senku/stt-respond` | multipart `audio`, form `thread_id` | `{ transcript, response }` |
+| POST | `/senku/stt-respond-stream` | multipart `audio`, form `thread_id` | SSE transcript + token stream |
 
-| Field | Type | Default |
-|-------|------|---------|
-| `audio` | file | — |
-| `thread_id` | string | — |
-| `language` | string | `en` |
-
-`/stt-respond-stream` SSE format:
+SSE stream format:
 ```
-data: {"transcript": "..."}
-data: {"token": "..."}
+data: {"transcript": "..."}   ← STT endpoints only
+data: {"token": "..."}        ← repeated
 ...
 data: [DONE]
 ```
 
-## Test individual MCP server
-
-```bash
-uv run fastmcp dev inspector SenkuNoChinou/MCP/servers/<name>_server.py
-```
+---
 
 ## Stack
 
-Python 3.12 · uv · FastAPI · uvicorn · LangGraph · LangChain · LangSmith · FastMCP · langchain-mcp-adapters · ChatGroq · faster-whisper · Tavily · Jina · ntfy.sh · ytmusicapi
+Python 3.12 · uv · FastAPI · uvicorn · LangGraph · LangChain · LangSmith · FastMCP · langchain-mcp-adapters · ChatGroq · Groq Whisper API · pymongo · Beanie · MongoDB Atlas · Tavily · Jina · ntfy.sh · ytmusicapi · PlatformIO · ESP32

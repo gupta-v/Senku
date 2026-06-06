@@ -25,8 +25,8 @@ dependencies = [
     "langchain-groq>=1.1.2",
     "redis>=8.0.0",
     "uvicorn[standard]>=0.48.0",
-    "faster-whisper>=1.2.1",
-    "pillow>=11.0.0",
+"pillow>=11.0.0",
     "certifi>=2026.5.20",
+    "pymongo>=4.9.0",
     "beanie>=2.1.0",
 ]
