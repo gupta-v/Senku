@@ -12,10 +12,13 @@ load_dotenv()
 
 _TOPIC = os.getenv("NTFY_TOPIC", "senku-hokoku")
 _NTFY_BASE = "https://ntfy.sh"
+_NTFY_TOKEN = os.getenv("NTFY_TOKEN", "")  # set to avoid shared-IP rate limits on Render
 _RETRY_DELAYS = (2.0, 5.0, 10.0)  # backoff on 429
 
 
 async def _post_ntfy(url: str, content: bytes, headers: dict) -> httpx.Response:
+    if _NTFY_TOKEN:
+        headers = {**headers, "Authorization": f"Bearer {_NTFY_TOKEN}"}
     async with httpx.AsyncClient() as client:
         for i, delay in enumerate((*_RETRY_DELAYS, None)):
             response = await client.post(url, content=content, headers=headers, timeout=10)
