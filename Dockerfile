@@ -15,8 +15,11 @@ RUN uv sync --frozen --no-dev
 
 COPY . .
 
+RUN chmod +x docker-entrypoint.sh
 
 EXPOSE 8000
+EXPOSE 8081 8082 8083 8084
 
-# Render injects $PORT — fall back to 8000 locally
-CMD uv run uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+# APP_MODE=api (default) → uvicorn FastAPI
+# APP_MODE=mcp           → MCP servers (8081-8084)
+ENTRYPOINT ["./docker-entrypoint.sh"]

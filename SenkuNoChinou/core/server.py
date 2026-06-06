@@ -24,17 +24,18 @@ from SenkuNoChinou.MCP.servers.go_server import mcp as go_mcp
 
 log = logging.getLogger("senku.mcpserver")
 
-# ── Port config (override via env) ────────────────────────────────────────────
+# ── Port / host config (override via env) ─────────────────────────────────────
+MCP_HOST  = os.getenv("MCP_HOST", "localhost")
 ICHI_PORT = int(os.getenv("ICHI_SERVER_PORT", "8081"))
 NI_PORT   = int(os.getenv("NI_SERVER_PORT",   "8082"))
 SAN_PORT  = int(os.getenv("SAN_SERVER_PORT",  "8083"))
 GO_PORT   = int(os.getenv("GO_SERVER_PORT",   "8084"))
 
 # ── URLs for the MCP client in gear definitions ───────────────────────────────
-ICHI_URL = f"http://localhost:{ICHI_PORT}/mcp"
-NI_URL   = f"http://localhost:{NI_PORT}/mcp"
-SAN_URL  = f"http://localhost:{SAN_PORT}/mcp"
-GO_URL   = f"http://localhost:{GO_PORT}/mcp"
+ICHI_URL = f"http://{MCP_HOST}:{ICHI_PORT}/mcp"
+NI_URL   = f"http://{MCP_HOST}:{NI_PORT}/mcp"
+SAN_URL  = f"http://{MCP_HOST}:{SAN_PORT}/mcp"
+GO_URL   = f"http://{MCP_HOST}:{GO_PORT}/mcp"
 
 # Seconds to wait after servers start before workflow connects to them
 _STARTUP_GRACE = float(os.getenv("MCP_STARTUP_GRACE", "2.0"))
