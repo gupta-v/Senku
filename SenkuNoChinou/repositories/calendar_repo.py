@@ -18,10 +18,10 @@ async def insert_event(title: str, event_datetime: datetime, notes: str = "") ->
 
 
 async def get_events(upcoming_only: bool = True, limit: int = 20) -> list[dict]:
-    conditions = []
+    query: dict = {}
     if upcoming_only:
-        conditions.append(Event.event_datetime >= datetime.utcnow())
-    docs = await Event.find(*conditions).sort("+event_datetime").limit(limit).to_list()
+        query["event_datetime"] = {"$gte": datetime.utcnow()}
+    docs = await Event.find(query).sort("+event_datetime").limit(limit).to_list()
     return [_to_dict(d) for d in docs]
 
 
@@ -29,11 +29,10 @@ async def get_events_needing_reminder(window_minutes: int = 2) -> list[dict]:
     now = datetime.utcnow()
     lo = now + timedelta(minutes=14)
     hi = now + timedelta(minutes=15 + window_minutes)
-    docs = await Event.find(
-        Event.event_datetime >= lo,
-        Event.event_datetime <= hi,
-        Event.reminder_sent == False,  # noqa: E712
-    ).to_list()
+    docs = await Event.find({
+        "event_datetime": {"$gte": lo, "$lte": hi},
+        "reminder_sent": False,
+    }).to_list()
     return [_to_dict(d) for d in docs]
 
 

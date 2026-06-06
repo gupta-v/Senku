@@ -33,12 +33,12 @@ async def insert_todo(
 
 
 async def get_todos(status: str = "pending", due_date: str = "") -> list[dict]:
-    conditions = []
+    query: dict = {}
     if status:
-        conditions.append(Todo.status == status)
+        query["status"] = status
     if due_date:
-        conditions.append(Todo.due_date == due_date)
-    docs = await Todo.find(*conditions).sort("-created_at").to_list()
+        query["due_date"] = due_date
+    docs = await Todo.find(query).sort("-created_at").to_list()
     return [_to_dict(d) for d in docs]
 
 

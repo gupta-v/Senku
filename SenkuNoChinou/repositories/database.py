@@ -3,21 +3,21 @@ import os
 
 import certifi
 from beanie import init_beanie
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from SenkuNoChinou.models.dataSchema import Todo, Event, JournalEntry
 
 log = logging.getLogger("senku.db")
 
-_client: AsyncIOMotorClient | None = None
+_client: AsyncMongoClient | None = None
 
 
-def _get_client() -> AsyncIOMotorClient:
+def _get_client() -> AsyncMongoClient:
     global _client
     if _client is None:
         uri = os.environ["MONGODB_URI"]
-        _client = AsyncIOMotorClient(uri, tlsCAFile=certifi.where())
-        log.info("MongoDB Motor client initialised")
+        _client = AsyncMongoClient(uri, tlsCAFile=certifi.where())
+        log.info("MongoDB client initialised")
     return _client
 
 

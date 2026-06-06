@@ -18,13 +18,13 @@ async def insert_entry(content: str, mood: str = "", tags: list[str] | None = No
 
 
 async def get_entries(days: int = 7, tag: str = "", limit: int = 50) -> list[dict]:
-    conditions = []
+    query: dict = {}
     if days:
         since = datetime.utcnow() - timedelta(days=days)
-        conditions.append(JournalEntry.created_at >= since)
+        query["created_at"] = {"$gte": since}
     if tag:
-        conditions.append(JournalEntry.tags == tag)
-    docs = await JournalEntry.find(*conditions).sort("-created_at").limit(limit).to_list()
+        query["tags"] = tag
+    docs = await JournalEntry.find(query).sort("-created_at").limit(limit).to_list()
     return [_to_dict(d) for d in docs]
 
 
