@@ -114,19 +114,6 @@ Four FastMCP HTTP servers run **in-process** inside the FastAPI app (no subproce
 
 ---
 
-## Deployment
-
-Two services, deployed separately:
-
-| Service | Role | Port |
-|---------|------|------|
-| `senku-mcp` | Runs all four MCP servers (`APP_MODE=mcp`) | 8081–8084 |
-| `senku-api` | FastAPI app, connects to `senku-mcp` via `MCP_HOST` | 8000 |
-
-`docker-compose.yml` orchestrates both. `senku-api` waits for `senku-mcp` healthcheck (port 8081) before starting.
-
----
-
 ## Requirements
 
 - Python 3.12+
@@ -158,16 +145,13 @@ cp .env.example .env
 ## Run
 
 ```bash
-# 1. MCP servers (ichi/ni/san/go on ports 8081–8084):
-uv run python SenkuNoChinou/core/server.py
-
-# 2. FastAPI server (separate terminal, after MCP is up):
+# FastAPI server (MCP servers start in-process automatically):
 uv run python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-dir SenkuNoChinou
 
-# CLI app (boots both internally):
+# CLI app:
 uv run python .\SenkuNoChinou\services\cli_app.py
 
-# Docker (both services):
+# Docker:
 docker-compose up --build
 
 # Test individual MCP server:
