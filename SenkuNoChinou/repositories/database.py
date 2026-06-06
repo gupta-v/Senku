@@ -1,49 +1,36 @@
 import logging
 import os
 
-from motor.motor_asyncio import (
-    AsyncIOMotorClient,
-    AsyncIOMotorCollection,
-    AsyncIOMotorDatabase,
-)
+import certifi
+from beanie import init_beanie
+from pymongo import AsyncMongoClient
+
+from SenkuNoChinou.models.dataSchema import Todo, Event, JournalEntry
 
 log = logging.getLogger("senku.db")
 
-_client: AsyncIOMotorClient | None = None
+_client: AsyncMongoClient | None = None
 
 
-def _get_client() -> AsyncIOMotorClient:
+def _get_client() -> AsyncMongoClient:
     global _client
     if _client is None:
         uri = os.environ["MONGODB_URI"]
-        _client = AsyncIOMotorClient(uri)
-        log.info("MongoDB Motor client initialised")
+        _client = AsyncMongoClient(uri, tlsCAFile=certifi.where())
+        log.info("MongoDB client initialised")
     return _client
 
 
-def get_db() -> AsyncIOMotorDatabase:
-    return _get_client()["senku"]
-
-
-# ── Collection accessors ──────────────────────────────────────────────────────
-
-def todos() -> AsyncIOMotorCollection:
-    return get_db()["todos"]
-
-
-def events() -> AsyncIOMotorCollection:
-    return get_db()["events"]
-
-
-def journal() -> AsyncIOMotorCollection:
-    return get_db()["journal"]
-
-
 async def ping() -> bool:
-    """Verify the connection is alive. Called at startup."""
+    """Verify connection and initialise Beanie. Called at startup."""
     try:
-        await _get_client().admin.command("ping")
-        log.info("MongoDB ping OK")
+        client = _get_client()
+        await client.admin.command("ping")
+        await init_beanie(
+            database=client["senku"],
+            document_models=[Todo, Event, JournalEntry],
+        )
+        log.info("MongoDB ping OK + Beanie initialised")
         return True
     except Exception as exc:
         log.error("MongoDB ping failed: %s", exc)

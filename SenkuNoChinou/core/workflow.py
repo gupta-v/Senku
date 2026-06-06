@@ -46,8 +46,7 @@ async def respond_stream(app, query: str, thread_id: str):
         version="v2",
     ):
         if event["event"] == "on_chat_model_stream":
-            tags = event.get("tags", [])
-            if "yon_verifier" in tags:
+            if "yon_verifier" in event.get("tags", []):
                 chunk = event["data"]["chunk"]
                 if hasattr(chunk, "content") and chunk.content:
                     yield chunk.content
@@ -83,7 +82,7 @@ async def build_workflow():
             log.info("gear_%s done msg_count=%d", name, len(result["messages"]))
             return result["messages"]
         except Exception as exc:
-            log.error("gear_%s failed: %s", name, exc)
+            log.exception("gear_%s failed: %s", name, exc)
             body = getattr(exc, "body", None)
             if isinstance(body, dict):
                 failed_gen = body.get("error", {}).get("failed_generation")
@@ -119,17 +118,12 @@ async def build_workflow():
 
     async def gear_yon_node(state: AgentState) -> dict:
         log.info("gear_yon verifying retry_count=%d", state.get("retry_count", 0))
-        verdict = await yon.verify(state["messages"])
+        verdict, response_text = await yon.verify(state["messages"])
         log.info("gear_yon verdict fulfilled=%s target=%s", verdict.fulfilled, verdict.target_gear)
 
         new_retry = state.get("retry_count", 0) + (0 if verdict.fulfilled else 1)
-        last_msg = state["messages"][-1] if state["messages"] else None
-        response_msg = AIMessage(
-            content=verdict.response,
-            id=last_msg.id if last_msg else None,
-        )
         return {
-            "messages": [response_msg],
+            "messages": [AIMessage(content=response_text)],
             "fulfilled": verdict.fulfilled,
             "retry_count": new_retry,
             "gear": verdict.target_gear if not verdict.fulfilled else state.get("gear", "ichi"),

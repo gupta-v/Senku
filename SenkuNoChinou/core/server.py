@@ -46,6 +46,9 @@ async def run_mcp_servers() -> None:
     Start all MCP HTTP servers concurrently.
     Meant to run as a background asyncio task from lifespan.
     """
+    from SenkuNoChinou.repositories.database import ping as db_ping
+    await db_ping()
+
     log.info(
         "MCP servers starting — ichi:%d  ni:%d  san:%d  go:%d",
         ICHI_PORT, NI_PORT, SAN_PORT, GO_PORT,

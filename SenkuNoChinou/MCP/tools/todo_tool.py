@@ -7,6 +7,7 @@ LangChain wrappers at the bottom are used directly by workflow.py.
 """
 import asyncio
 import logging
+from datetime import date
 
 from langchain.tools import tool
 
@@ -33,12 +34,25 @@ async def add_todo(task: str, priority: str = "medium", due_date: str = "", due_
         due_time: Expected finish time in HH:MM format (optional).
         note: Extra context — URLs, details, reminders (optional).
         status: pending | done. Use 'done' if user says the task is already completed. Default pending.
+            NOTE: past due dates are ONLY allowed when status='done'. Pending todos must have today or a future date.
 
     Returns:
         Confirmation string with the todo ID.
     """
     priority = priority.lower() if priority.lower() in _PRIORITY_EMOJI else "medium"
     status = status.lower() if status.lower() in ("pending", "done") else "pending"
+
+    if due_date and status != "done":
+        try:
+            parsed = date.fromisoformat(due_date)
+            if parsed < date.today():
+                return (
+                    f"⚠️ Cannot add pending todo with a past due date ({due_date}). "
+                    "Use status='done' for completed tasks, or set a current/future due date."
+                )
+        except ValueError:
+            return f"⚠️ Invalid due_date format '{due_date}'. Use YYYY-MM-DD."
+
     todo_id = await todo_repo.insert_todo(task, priority, due_date, due_time, note, status)
     emoji = _PRIORITY_EMOJI[priority]
     due = f" · due {due_date}" + (f" {due_time}" if due_time else "") if due_date else ""
@@ -110,6 +124,17 @@ async def edit_todo(todo_id: str, task: str = "", priority: str = "", due_date: 
     updates = {k: v for k, v in {"task": task, "priority": priority, "due_date": due_date, "due_time": due_time, "note": note}.items() if v}
     if not updates:
         return "⚠️ No fields provided to update."
+
+    if due_date:
+        try:
+            if date.fromisoformat(due_date) < date.today():
+                return (
+                    f"⚠️ Cannot set a past due date ({due_date}) on a todo. "
+                    "Use today or a future date."
+                )
+        except ValueError:
+            return f"⚠️ Invalid due_date format '{due_date}'. Use YYYY-MM-DD."
+
     ok = await todo_repo.update_todo(todo_id, **updates)
     if not ok:
         return f"❌ Todo {todo_id[:8]} not found."

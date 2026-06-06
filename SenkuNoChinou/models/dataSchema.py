@@ -1,30 +1,44 @@
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Optional
 
-from pydantic import BaseModel, Field
+from beanie import Document
+from pydantic import Field
 
 
-class TodoItem(BaseModel):
+class Todo(Document):
     task: str
-    priority: Literal["low", "medium", "high", "urgent"] = "medium"
-    due_date: str  # "YYYY-MM-DD"
-    due_time: str = ""  # "HH:MM" or empty
-    status: Literal["pending", "done"] = "pending"
+    priority: str = "medium"
+    due_date: str = ""
+    due_time: str = ""
+    note: str = ""
+    status: str = "pending"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Settings:
+        name = "todos"
 
 
-class CalendarEvent(BaseModel):
+class Event(Document):
     title: str
     event_datetime: datetime
     notes: str = ""
+    status: str = "scheduled"
+    reminder_sent: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    reminder_sent: bool = False  # scheduler flips this after 15-min ntfy
+    updated_at: Optional[datetime] = None
+
+    class Settings:
+        name = "events"
 
 
-class JournalEntry(BaseModel):
+class JournalEntry(Document):
     content: str
     mood: str = ""
     tags: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "journal"
