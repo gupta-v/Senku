@@ -15,9 +15,9 @@ class RouteDecision(BaseModel):
 _ROUTER_PROMPT = """Classify the conversation and return the correct gear name. One word only.
 
 - ichi: research, web search, wikipedia, browse URLs, news, general knowledge, factual questions, follow-up questions on any topic
-- ni: music (play/search/skip), weather, time, date
-- san: send push notification to phone ONLY when user explicitly says "notify me", "send notification", or "push alert"
-- go: todos, tasks, work items, calendar events, scheduling, journal entries, productivity — anything involving adding/listing/completing/editing tasks or events, or logging what happened
+- ni: todos, tasks, work items, calendar events, scheduling, journal entries, productivity — anything involving adding/listing/completing/editing tasks or events, or logging what happened
+- san: music (play/search/skip), weather, time, date
+- go: send push notification to phone ONLY when user explicitly says "notify me", "send notification", or "push alert"
 
 When in doubt, return ichi."""
 

@@ -18,12 +18,7 @@ gear_go = Gear(
         },
     },
     system_prompt=get_go_system_prompt(),
-    tool_names={
-        "get_datetime",
-        "add_todo", "list_todos", "complete_todo", "edit_todo",
-        "add_event", "list_events", "delete_event", "mark_event_status",
-        "add_journal", "read_journal", "edit_journal",
-    },
+    tool_names={"send_notification"},
     llm=ChatGroq(
         model=os.getenv("GO_MODEL", os.getenv("ICHI_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")),
         api_key=os.environ["GROQ_API_KEY"],
