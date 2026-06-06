@@ -28,7 +28,7 @@ async def _fire_reminders() -> None:
         log.info("reminder ntfy event_id=%s title=%r", event["_id"][:8], title)
         await send_notification(
             message,
-            "Senku · Reminder",
+            "Senku Reminder",
             4,           # high priority
             ["alarm_clock"],
         )

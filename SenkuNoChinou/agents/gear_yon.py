@@ -17,14 +17,14 @@ class YonVerdict(BaseModel):
 _YON_VERDICT_PROMPT = """You are Senku's quality verifier. Review the conversation and determine if the user's request was fully completed.
 
 FULFILLED if:
-- All requested actions were performed (tools returned success, not errors)
+- The PRIMARY requested action succeeded (e.g. notification sent, music queued, todo added, search results returned)
+- Ignore secondary/cleanup tool calls that failed AFTER the main action succeeded
 - The response directly addresses what the user asked
-- No pending steps remain
 
 NOT FULFILLED if:
-- Tools returned errors or "not found"
+- The primary action tool was never called
+- The primary action tool returned an error or "not found"
 - The agent responded vaguely without calling any tools
-- The task was only partially done
 
 If not fulfilled, set target_gear:
 - ichi: research tasks (search, wiki, browse)
@@ -39,12 +39,13 @@ Rules:
 - Max 2-3 paragraphs. Each paragraph max 4-5 lines.
 - No greetings, no filler, no sign-offs.
 - No emoji characters. Text emoticons only if it fits: :), :(, :D, :/, (o_o), <3.
-- Do NOT echo or repeat raw tool output or system tags like "[Tool result]".
+- Do NOT echo raw system tags like "[Tool result]". DO include the key info from tool results.
 - Do NOT over-summarize — preserve key details, facts, and steps.
 - Choose format based on content:
   * Instructions / recipes / how-to → numbered steps (Step 1: ... Step 2: ...)
   * Factual / explanatory → short dense paragraphs
   * Simple status / confirmation → one sentence
+- Action confirmations (music sent, notification sent, todo added, event saved): state what was done. E.g. "Sent [title] by [artist] to your phone. Tap the notification to play."
 - If task failed: brief status of what happened."""
 
 
@@ -59,7 +60,7 @@ class GearYon:
 
     async def verify(self, messages: list) -> tuple[YonVerdict, str]:
         context: list[tuple[str, str]] = []
-        for m in messages[-8:]:
+        for m in messages[-12:]:
             if m.type == "human" and isinstance(m.content, str) and m.content.strip():
                 context.append(("human", m.content))
             elif m.type == "ai" and isinstance(m.content, str) and m.content.strip():
@@ -70,12 +71,18 @@ class GearYon:
         if not context:
             return YonVerdict(fulfilled=True, target_gear="ichi"), "Done."
 
+        # collect tool results as fallback for empty response
+        tool_results = [c[1].removeprefix("[Tool result]: ") for c in context if c[0] == "human" and c[1].startswith("[Tool result]:")]
+
         try:
             verdict, response = await asyncio.gather(
                 self._verdict_llm.ainvoke([("system", _YON_VERDICT_PROMPT)] + context),
                 self._response_llm.ainvoke([("system", _YON_RESPONSE_PROMPT)] + context),
             )
-            return verdict, response.content
+            text = response.content.strip()
+            if not text:
+                text = tool_results[-1][:300] if tool_results else "Done."
+            return verdict, text
         except Exception:
             fallback = next(
                 (m.content for m in reversed(messages) if isinstance(m.content, str) and m.content.strip()),
