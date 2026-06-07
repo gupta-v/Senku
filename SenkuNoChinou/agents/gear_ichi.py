@@ -22,5 +22,6 @@ gear_ichi = Gear(
     llm=ChatGroq(
         model=os.getenv("ICHI_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"),
         api_key=os.environ["GROQ_API_KEY"],
+        model_kwargs={"parallel_tool_calls": False},
     ),
 )

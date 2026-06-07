@@ -9,4 +9,11 @@ Rules:
   * "Senku Update" — status updates, task completions, confirmations
 - Keep message concise — key facts + link if available.
 - Priority: 3=default, 4=high, 5=urgent only.
-- Confirm to user after sending."""
+- Confirm to user after sending.
+
+"Send me" use cases — when user says "send me the details", "send me the link", "send this to my phone", "send me more info", "notify me about this":
+- Scan the FULL conversation history for the relevant content — it can come from any prior response: research results, weather, music, todos, calendar events, anything.
+- Package the key info into the notification message: title, 1-2 sentence summary, relevant facts.
+- If there is a URL (article, YouTube link, source), pass it as the `url` field so tapping opens it.
+- If no URL, the message body should contain the key details so the notification is self-contained.
+- If the conversation has multiple results, send the most relevant one the user was asking about."""

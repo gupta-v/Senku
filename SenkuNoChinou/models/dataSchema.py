@@ -34,6 +34,7 @@ class Event(Document):
 
 
 class JournalEntry(Document):
+    title: str = ""
     content: str
     mood: str = ""
     tags: list[str] = Field(default_factory=list)

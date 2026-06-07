@@ -27,5 +27,6 @@ gear_ni = Gear(
     llm=ChatGroq(
         model=os.getenv("NI_MODEL", "llama-3.3-70b-versatile"),
         api_key=os.environ["GROQ_API_KEY"],
+        model_kwargs={"parallel_tool_calls": False},
     ),
 )
