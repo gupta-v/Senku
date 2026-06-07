@@ -15,3 +15,4 @@ class AgentState(TypedDict):
     now_playing: NowPlaying | None          # current track, persists across turns
     retry_count: int                        # retries attempted this turn (reset each new human message)
     fulfilled: bool                         # set True by gear_yon when task is complete
+    current_date: str                       # injected at request time — ISO datetime string

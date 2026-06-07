@@ -9,7 +9,7 @@ load_dotenv()
 
 
 class RouteDecision(BaseModel):
-    gear: Literal["ichi", "ni", "san", "go"]
+    gear: Literal["ichi", "ni", "san", "yon"]
 
 
 _ROUTER_PROMPT = """Classify the conversation and return the correct gear name. One word only.
@@ -17,7 +17,7 @@ _ROUTER_PROMPT = """Classify the conversation and return the correct gear name. 
 - ichi: research, web search, wikipedia, browse URLs, news, general knowledge, factual questions, follow-up questions on any topic
 - ni: todos, tasks, work items, calendar events, scheduling, journal entries, productivity — anything involving adding/listing/completing/editing tasks or events, or logging what happened
 - san: music (play/search/skip), weather, time, date
-- go: send push notification to phone ONLY when user explicitly says "notify me", "send notification", or "push alert"
+- yon: send push notification to phone — use when user says "notify me", "send notification", "push alert", "send me the details", "send me the link", "send this to my phone", "ping me", or wants info/link delivered to their phone
 
 When in doubt, return ichi."""
 
@@ -26,7 +26,7 @@ class GearZero:
 
     def __init__(self):
         llm = ChatGroq(
-            model=os.getenv("ICHI_MODEL", "llama-3.3-70b-versatile"),
+            model=os.getenv("ZERO_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"),
             api_key=os.environ["GROQ_API_KEY"],
         )
         self._llm = llm.with_structured_output(RouteDecision)

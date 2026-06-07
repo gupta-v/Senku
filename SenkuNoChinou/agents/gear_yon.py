@@ -1,91 +1,27 @@
-import asyncio
 import os
-from typing import Literal
 
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
-from pydantic import BaseModel
+
+from SenkuNoChinou.agents.gear_base import Gear
+from SenkuNoChinou.MCP.prompts.yon_prompt import get_yon_system_prompt
+from SenkuNoChinou.core.server import GO_URL
 
 load_dotenv()
 
-
-class YonVerdict(BaseModel):
-    fulfilled: bool
-    target_gear: Literal["ichi", "ni", "san", "go"] = "ichi"
-
-
-_YON_VERDICT_PROMPT = """You are Senku's quality verifier. Review the conversation and determine if the user's request was fully completed.
-
-FULFILLED if:
-- The PRIMARY requested action succeeded (e.g. notification sent, music queued, todo added, search results returned)
-- Ignore secondary/cleanup tool calls that failed AFTER the main action succeeded
-- The response directly addresses what the user asked
-
-NOT FULFILLED if:
-- The primary action tool was never called
-- The primary action tool returned an error or "not found"
-- The agent responded vaguely without calling any tools
-
-If not fulfilled, set target_gear:
-- ichi: research tasks (search, wiki, browse)
-- ni: todos, calendar events, journal entries, productivity
-- san: music, weather, datetime
-- go: push notifications"""
-
-
-_YON_RESPONSE_PROMPT = """You are Senku's response formatter. Write the final display response based on the conversation.
-
-Rules:
-- Max 2-3 paragraphs. Each paragraph max 4-5 lines.
-- No greetings, no filler, no sign-offs.
-- No emoji characters. Text emoticons only if it fits: :), :(, :D, :/, (o_o), <3.
-- Do NOT echo raw system tags like "[Tool result]". DO include the key info from tool results.
-- Do NOT over-summarize — preserve key details, facts, and steps.
-- Choose format based on content:
-  * Instructions / recipes / how-to → numbered steps (Step 1: ... Step 2: ...)
-  * Factual / explanatory → short dense paragraphs
-  * Simple status / confirmation → one sentence
-- Action confirmations (music sent, notification sent, todo added, event saved): state what was done. E.g. "Sent [title] by [artist] to your phone. Tap the notification to play."
-- If task failed: brief status of what happened."""
-
-
-class GearYon:
-    def __init__(self):
-        llm = ChatGroq(
-            model=os.getenv("YON_MODEL", "llama-3.3-70b-versatile"),
-            api_key=os.environ["GROQ_API_KEY"],
-        )
-        self._verdict_llm = llm.with_structured_output(YonVerdict)
-        self._response_llm = llm.with_config(tags=["yon_verifier"])
-
-    async def verify(self, messages: list) -> tuple[YonVerdict, str]:
-        context: list[tuple[str, str]] = []
-        for m in messages[-12:]:
-            if m.type == "human" and isinstance(m.content, str) and m.content.strip():
-                context.append(("human", m.content))
-            elif m.type == "ai" and isinstance(m.content, str) and m.content.strip():
-                context.append(("assistant", m.content))
-            elif m.type == "tool" and isinstance(m.content, str) and m.content.strip():
-                context.append(("human", f"[Tool result]: {m.content}"))
-
-        if not context:
-            return YonVerdict(fulfilled=True, target_gear="ichi"), "Done."
-
-        # collect tool results as fallback for empty response
-        tool_results = [c[1].removeprefix("[Tool result]: ") for c in context if c[0] == "human" and c[1].startswith("[Tool result]:")]
-
-        try:
-            verdict, response = await asyncio.gather(
-                self._verdict_llm.ainvoke([("system", _YON_VERDICT_PROMPT)] + context),
-                self._response_llm.ainvoke([("system", _YON_RESPONSE_PROMPT)] + context),
-            )
-            text = response.content.strip()
-            if not text:
-                text = tool_results[-1][:300] if tool_results else "Done."
-            return verdict, text
-        except Exception:
-            fallback = next(
-                (m.content for m in reversed(messages) if isinstance(m.content, str) and m.content.strip()),
-                "Done.",
-            )
-            return YonVerdict(fulfilled=True, target_gear="ichi"), fallback[:300]
+gear_yon = Gear(
+    name="yon",
+    servers={
+        "go": {
+            "url": GO_URL,
+            "transport": "streamable_http",
+        },
+    },
+    system_prompt=get_yon_system_prompt(),
+    tool_names={"send_notification"},
+    llm=ChatGroq(
+        model=os.getenv("YON_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"),
+        api_key=os.environ["GROQ_API_KEY"],
+        model_kwargs={"parallel_tool_calls": False},
+    ),
+)

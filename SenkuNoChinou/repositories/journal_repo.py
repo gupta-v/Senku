@@ -11,8 +11,8 @@ def _to_dict(doc: JournalEntry) -> dict:
     return d
 
 
-async def insert_entry(content: str, mood: str = "", tags: list[str] | None = None) -> str:
-    entry = JournalEntry(content=content, mood=mood, tags=tags or [])
+async def insert_entry(content: str, mood: str = "", tags: list[str] | None = None, title: str = "") -> str:
+    entry = JournalEntry(title=title, content=content, mood=mood, tags=tags or [])
     await entry.insert()
     return str(entry.id)
 
