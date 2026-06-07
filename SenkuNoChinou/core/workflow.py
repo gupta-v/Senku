@@ -163,8 +163,8 @@ async def build_workflow():
         verdict, response_text = await go.verify(state["messages"])
         log.info("gear_go verdict fulfilled=%s target=%s", verdict.fulfilled, verdict.target_gear)
 
-        # Notifications are fire-and-forget — never retry yon.
-        # Detect by finding the trigger HumanMessage and any ToolMessage after it.
+        # Notifications are fire-and-forget — once the trigger was injected, never retry yon
+        # regardless of whether the notification actually sent (429, timeout, etc.).
         msgs = state["messages"]
         trigger_idx = next(
             (i for i, m in enumerate(msgs)
@@ -172,10 +172,7 @@ async def build_workflow():
              and _NI_NOTIFY_TRIGGER in (m.content if isinstance(m.content, str) else "")),
             None,
         )
-        yon_fired = trigger_idx is not None and any(
-            getattr(m, "type", None) == "tool" for m in msgs[trigger_idx:]
-        )
-        if yon_fired:
+        if trigger_idx is not None:
             verdict = GoVerdict(fulfilled=True, target_gear="ichi")
 
         new_retry = state.get("retry_count", 0) + (0 if verdict.fulfilled else 1)
