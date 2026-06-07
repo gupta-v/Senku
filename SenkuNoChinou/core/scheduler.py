@@ -33,6 +33,7 @@ async def _fire_reminders() -> None:
             ["alarm_clock"],
         )
         await calendar_repo.mark_reminder_sent(event["_id"])
+        await asyncio.sleep(2)  # prevent burst when multiple reminders fire together
 
 
 async def run_scheduler() -> None:
